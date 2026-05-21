@@ -161,6 +161,69 @@ curl -X POST "https://api.telegram.org/bot${TOKEN}/setWebhook" \
   -d "url=${URL}&secret_token=$(cat ~/.secret/webhook)"
 ```
 
+## T14. Bedrock: "Model use case details have not been submitted" (🔴 가장 마지막 함정)
+
+**증상**: 봇한테 메시지 보내면 답장은 오는데 내용이:
+```
+Model use case details have not been submitted for this account.
+Fill out the Anthropic use case details form before using the model.
+If you have already filled out the form, try again in 15 minutes.
+```
+
+**원인**: Bedrock 모델 access 페이지가 deprecated 됐어도 (T2 참고), **Anthropic 모델은 처음 사용 시 별도 use case 폼 제출 필수**. AWS 가 그 정보를 Anthropic 에 전달하는 정책.
+
+**해결** — 콘솔에서 1회 (5분):
+1. https://${REGION}.console.aws.amazon.com/bedrock/home?region=${REGION}#/model-catalog
+2. **Anthropic / Claude Haiku 4.5** 카드 클릭
+3. 우상단 **"Available to request"** 또는 **"Request model access"** 버튼
+4. 폼 작성:
+
+| 필드 | 입력 예시 |
+|---|---|
+| Company name | `Dcode` 같이 짧은 회사명 |
+| Company website URL | 본인 사이트 또는 `https://example.com` |
+| Industry | `Software / Technology` |
+| Intended users | `Internal users` |
+| Use case description | `Personal serverless AI assistant for development experiments via Telegram bot.` (500자 이내) |
+| External user access | `No` |
+
+5. **Submit** → 즉시 활성화 (대부분) 또는 5~15분
+6. **Sonnet 4.5 도 같이 enable** (나중에 모델 업그레이드용)
+
+폼 한 번 제출하면 계정 전체에서 모든 Anthropic 모델 사용 가능.
+
+## T13. Lambda Container: "@smithy/core/retry not exported"
+
+**증상**:
+```
+Error [ERR_PACKAGE_PATH_NOT_EXPORTED]:
+Package subpath './retry' is not defined by "exports"
+in /var/task/node_modules/@smithy/core/package.json
+```
+
+**원인**: OpenClaw 의 `@smithy/core` 와 `@aws-sdk/lib-dynamodb` 의 `@smithy/core` 가 버전 충돌. Dockerfile 에서 두 패키지를 따로 설치하면 의존성 tree 가 어긋남.
+
+**해결**: 둘을 **함께 npm install** — npm 이 dependency tree 정리.
+
+`packages/lambda-agent/Dockerfile`:
+```dockerfile
+# 💀 잘못된 방법 (separate install)
+RUN npm install openclaw@${OPENCLAW_VERSION}
+COPY --from=builder /build/node_modules/@aws-sdk/lib-dynamodb/ ...
+COPY --from=builder /build/node_modules/@smithy/ ...
+
+# ✅ 올바른 방법
+RUN npm install openclaw@${OPENCLAW_VERSION} @aws-sdk/lib-dynamodb
+```
+
+## T12. Lambda Container: "Cannot find module '@smithy/smithy-client'"
+
+**증상**: Lambda init 단계에서 module 못 찾음 — `@aws-sdk/lib-dynamodb` 의 transitive deps 누락.
+
+**원인**: Lambda runtime 은 `@aws-sdk/*` 만 제공, `@smithy/*` 는 제공하지 않음. Dockerfile 이 `lib-dynamodb` 만 복사하고 의존성 누락.
+
+**해결**: T13 과 통합 — `npm install` 로 함께 설치하면 npm 이 모든 transitive deps 자동 해결.
+
 ## T11. Lambda: "image manifest ... is not supported" (🔴 큰 함정)
 
 **증상**:
