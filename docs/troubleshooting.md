@@ -161,6 +161,71 @@ curl -X POST "https://api.telegram.org/bot${TOKEN}/setWebhook" \
   -d "url=${URL}&secret_token=$(cat ~/.secret/webhook)"
 ```
 
+## T11. Lambda: "image manifest ... is not supported" (🔴 큰 함정)
+
+**증상**:
+```
+Resource handler returned message: "The image manifest, config or layer media type
+for the source image ... is not supported.
+(Service: Lambda, Status Code: 400)"
+```
+
+**원인** (2025~2026 신규):
+- Docker Desktop 28+ 의 **containerd 백엔드** 가 모든 image 를 **OCI manifest** 로 push
+- Lambda Container 는 **Docker manifest v2 schema 2** 만 수용
+- AWS 공식 문서가 권장하는 `--provenance=false` 만으로 **부족**
+
+**시도해본 것들 (실패)**:
+| 시도 | 결과 |
+|---|---|
+| `--provenance=false --sbom=false` | ❌ containerd 가 OCI 로 변환 |
+| `--output type=image,oci-mediatypes=false` | ❌ buildx 가 무시 |
+| `default` driver + `--load` + `docker push` | ❌ 여전히 OCI |
+| `DOCKER_BUILDKIT=0` (legacy 빌더) | ❌ Docker 28 에서 무시 |
+| `skopeo copy --format v2s2` | ❌ mediatype 충돌 |
+| `crane pull/push` | ⚠️ 타임아웃 |
+
+**진짜 해결책** — 두 가지 중 하나:
+
+### 해결 A: `regctl` 로 manifest 변환 (가장 빠름)
+
+```bash
+brew install regclient
+
+REGISTRY=$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
+TOKEN=$(aws ecr get-login-password --region $REGION)
+echo "$TOKEN" | regctl registry login $REGISTRY --user AWS --pass-stdin
+
+regctl image mod --to-docker --replace \
+  $REGISTRY/serverless-openclaw-lambda-agent:latest
+```
+
+→ ECR 의 manifest 만 OCI → Docker v2 schema 2 로 in-place 교체. 모든 layer 그대로 (이미 docker mediatype 이라 변환 불필요).
+
+### 해결 B: Docker Desktop containerd 스토리지 OFF (근본 해결)
+
+1. Docker Desktop → ⚙️ Settings → **General**
+2. **"Use containerd for pulling and storing images"** **체크 해제**
+3. **"Apply & restart"**
+4. 다시 빌드하면 `docker buildx` 가 처음부터 Docker v2 manifest 로 push
+
+→ 빌드 자체가 정상화. 하지만 Docker Desktop 의 일부 새 기능 (multi-platform 캐시 등) 못 씀.
+
+**우리 스크립트** (`07-build-lambda-image.sh`) 는 **A** 방식으로 자동 처리:
+- 빌드 후 manifest 검증
+- OCI 면 regctl 자동 설치 + 변환
+- Docker v2 로 끝나야 통과
+
+기존 OCI 이미지 ECR 에 있으면 먼저 삭제:
+```bash
+aws ecr batch-delete-image --region $REGION \
+  --repository-name $REPO --image-ids imageTag=latest
+```
+
+**참고**:
+- [AWS Lambda Node.js 컨테이너 문서](https://docs.aws.amazon.com/lambda/latest/dg/nodejs-image.html) (`--provenance=false` 권장 — 하지만 충분치 않음)
+- [aws/aws-cdk#28178](https://github.com/aws/aws-cdk/issues/28178) — CDK + Docker Desktop containerd 호환성 이슈
+
 ## T10. 이미지가 너무 큰데?
 
 **증상**: Docker 이미지가 1GB+ → Lambda 한도 (10GB) 는 OK 지만 콜드스타트 느림.
