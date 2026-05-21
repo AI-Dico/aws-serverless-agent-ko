@@ -1,0 +1,24 @@
+# Secrets — 절대 커밋 금지
+.env
+.env.*
+!.env.example
+*.p8
+*.pem
+*.key
+*.csv
+
+# AWS
+.aws/
+
+# Logs
+.deploy-logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
