@@ -337,7 +337,72 @@ pie title 월 예상 비용 (개인 사용 ~ $1)
 
 상세: [`docs/cost.md`](./docs/cost.md)
 
-## 6. 정리 (사용 끝났을 때)
+## 6. 옵션: MCP 도구 사용 (Fargate Spot Gateway 추가)
+
+기본 9단계는 **Lambda 만으로 LLM 채팅 봇** 까지. 봇이 ainote / Linear / GitHub 같은 MCP 도구를 호출하려면 **OpenClaw Gateway** 가 필요한데, Gateway 는 WebSocket 상시 프로세스라 Lambda 로는 못 띄움. 그래서 **Fargate Spot** 을 추가합니다.
+
+### 왜 Fargate Spot?
+
+| | Lambda | EC2 | **Fargate Spot** |
+|---|---|---|---|
+| 상시 프로세스 가능 | ❌ 15분 한계 | ✅ | ✅ 무제한 |
+| 유휴 비용 | $0 | $15+/월 | **$0** (watchdog auto-stop) |
+| 콜드스타트 | 1.35s | 즉시 | ~68s |
+| 가격 | $0.20/M req | $15/월 고정 | **$0.04/vCPU-시간** (70% 할인) |
+
+Fargate Spot + **5분 무사용 시 자동 종료 (watchdog Lambda)** 조합으로 거의 $0 유휴 유지.
+
+### 추가 비용
+
+| 사용 패턴 | Fargate 비용/월 |
+|---|---|
+| 가끔 채팅 + 도구 호출 | ~$0.05 |
+| 매일 5~10분 도구 사용 | ~$0.50 |
+| 매일 1시간 활성 사용 | ~$2 |
+
+### 활성화 절차
+
+```bash
+# 1. ainote / Linear / GitHub MCP key 를 SSM SecureString 으로 저장
+AWS_PROFILE=dcode aws ssm put-parameter \
+  --name "/serverless-openclaw/secrets/ainote-mcp-auth" \
+  --type SecureString --value "McpKey YOUR_TOKEN" \
+  --region ap-northeast-2 --overwrite
+
+# 2. .env 에서 AGENT_RUNTIME 변경
+# AGENT_RUNTIME=lambda  →  AGENT_RUNTIME=both
+
+# 3. 원본 레포 코드 패치 (patch-config.ts + compute-stack.ts)
+#    이 레포의 docs/mcp-integration.md 참조
+
+# 4. Fargate container 이미지 빌드 + push
+docker buildx build --platform linux/arm64 --provenance=false --sbom=false \
+  -f packages/container/Dockerfile \
+  -t $ECR_HOST/serverless-openclaw:latest --load .
+docker push $ECR_HOST/serverless-openclaw:latest
+
+# 5. cdk deploy --all → NetworkStack + ComputeStack 신규 생성
+./scripts/08-deploy-all.sh
+```
+
+### 사용 방법 (Telegram)
+
+```
+사용자: /heavy 내 ainote 메모리에서 'serverless' 검색해줘
+봇: (Lambda → Fargate Gateway 라우팅 → ainote MCP 호출 → 결과)
+```
+
+`/heavy` 또는 `/fargate` 힌트가 메시지에 있으면 라우터가 Fargate 로 보냄. 평소 짧은 채팅은 Lambda 로.
+
+### 함정: MCP 통합 시 추가로 만날 함정
+
+- **T15** OpenClaw Gateway 가 Lambda 안에서 안 됨 (Pi 작가도 명시) → Fargate 필수
+- **T16** ainote MCP 같은 HTTP MCP 는 `streamable-http` transport. stdio MCP 는 `command` 형식
+- **T17** Bearer token 헤더는 `headers` field 에 `Authorization: McpKey ...` 형식
+
+자세한 통합 코드는 [docs/mcp-integration.md](./docs/mcp-integration.md) (작성 중).
+
+## 7. 정리 (사용 끝났을 때)
 
 ```bash
 ./scripts/99-teardown.sh
@@ -345,7 +410,7 @@ pie title 월 예상 비용 (개인 사용 ~ $1)
 
 모든 stack + ECR repo 삭제. Budget 알람은 콘솔에서 따로.
 
-## 7. 더 깊이 들어가기
+## 8. 더 깊이 들어가기
 
 - [`docs/architecture.md`](./docs/architecture.md) — 듀얼 컴퓨트 (Lambda + Fargate) 설계
 - [`docs/troubleshooting.md`](./docs/troubleshooting.md) — 모든 함정 + 해결법
