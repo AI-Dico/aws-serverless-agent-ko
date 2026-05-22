@@ -359,9 +359,26 @@ pie title 월 예상 비용 (개인 사용 ~ $1)
 
 상세: [`docs/cost.md`](./docs/cost.md)
 
-## 6. 옵션: MCP 도구 사용 (Fargate Spot Gateway 추가) ⏱️ +40분
+## 6. 후속: MCP 도구 통합 (실패 사례 + 미해결)
 
-기본 9단계는 **Lambda 만으로 LLM 채팅 봇** 까지. 봇이 ainote / Linear / GitHub 같은 MCP 도구를 호출하려면 **OpenClaw Gateway** 가 필요한데, Gateway 는 WebSocket 상시 프로세스라 Lambda 로는 못 띄움. 그래서 **Fargate Spot** 을 추가합니다.
+> 🚧 **Status (2026-05-22 검증 시점)**: **Lambda 채팅까지만 검증 완료**.
+> MCP 통합은 OpenClaw 2026.2.13 의 schema/CLI 와 우리 가정이 어긋나서 보류.
+> 이 섹션은 **시도한 경로와 발견한 함정** 의 기록 (다음 도전자 참고용).
+
+기본 9단계는 **Lambda 만으로 LLM 채팅 봇** 까지. 봇이 ainote / Linear / GitHub 같은 MCP 도구를 호출하려면 **OpenClaw Gateway** 가 필요한데, Gateway 는 WebSocket 상시 프로세스라 Lambda 로는 못 띄움. 그래서 **Fargate Spot** 을 시도했습니다.
+
+### 시도한 함정 4가지 (모두 막힘)
+
+| # | 가정 | 실제 |
+|---|---|---|
+| T18 | `openclaw.json` root 의 `mcp.servers` 키로 MCP 등록 | OpenClaw 가 root 의 `mcp` 키 **거부** (Unrecognized key) |
+| T19 | Bridge 가 ComputeStack env 만으로 부팅 | `CALLBACK_URL` env var 누락 → Bridge 즉시 죽음 |
+| T20 | `openclaw mcp set` CLI 명령 사용 가능 | OpenClaw 2026.2.13 에는 **`mcp` subcommand 없음** (`Did you mean acp?`) |
+| T21 | Telegram 은 API GW webhook 만 받음 | OpenClaw 가 env 의 `TELEGRAM_BOT_TOKEN` 감지해서 **자기 채널로 attach** → 충돌 |
+
+→ Perplexity 검색 결과의 "MCP 통합 가이드" 가 **현재 OpenClaw 2026.2.13 과 일치하지 않음**. 시간 더 들여 deep dive 필요.
+
+### 그래도 시도하려면 (미완성)
 
 ### 왜 Fargate Spot?
 
@@ -417,13 +434,16 @@ docker push $ECR_HOST/serverless-openclaw:latest
 
 `/heavy` 또는 `/fargate` 힌트가 메시지에 있으면 라우터가 Fargate 로 보냄. 평소 짧은 채팅은 Lambda 로.
 
-### 함정: MCP 통합 시 추가로 만날 함정
+### 다음 도전자에게 (TODO)
 
-- **T15** OpenClaw Gateway 가 Lambda 안에서 안 됨 (Pi 작가도 명시) → Fargate 필수
-- **T16** ainote MCP 같은 HTTP MCP 는 `streamable-http` transport. stdio MCP 는 `command` 형식
-- **T17** Bearer token 헤더는 `headers` field 에 `Authorization: McpKey ...` 형식
+1. OpenClaw 2026.2.13 의 실제 config schema 확인 — `~/.openclaw/openclaw.json` 의 정확한 키 트리
+2. `openclaw acp` 가 MCP 대체인지, 별도인지 확인
+3. `TELEGRAM_BOT_TOKEN` 환경변수 없이 Gateway 부팅하는 방법 (또는 OpenClaw 의 telegram plugin 비활성)
+4. `CALLBACK_URL` 을 ComputeStack 에서 ApiStack 의 WebSocket URL 로 동적 inject
 
-자세한 통합 코드는 [docs/mcp-integration.md](./docs/mcp-integration.md) (작성 중).
+또는 우회 전략:
+- **MCP 표준 포기**: Lambda agent 안에서 직접 ainote HTTP API 호출 (OpenClaw 의 tool system 우회)
+- **Bedrock Agent Core**: AWS 의 Bedrock AgentCore Runtime + MCP 사용 ([AWS docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp.html))
 
 ## 7. 정리 (사용 끝났을 때) ⏱️ ~10분
 
