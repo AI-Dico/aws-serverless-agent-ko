@@ -89,16 +89,17 @@ graph TB
 
 ```mermaid
 flowchart LR
-    A[0. 준비물<br/>Node/Docker/AWS계정] --> B[1. AWS 자격증명]
-    B --> C[2. Budget 알람<br/>$5/월]
-    C --> D[3. Bedrock 검증]
-    D --> E[4. CDK bootstrap]
-    E --> F[5. Telegram bot]
-    F --> G[6. Secrets 배포]
-    G --> H[7. Lambda 이미지<br/>빌드+푸시]
-    H --> I[8. 전체 배포]
-    I --> J[9. Telegram webhook<br/>활성화]
-    J --> K[✅ 봇과 대화]
+    A[0. 준비물<br/>5분] --> B[1. AWS 자격증명<br/>10분]
+    B --> C[2. Budget 알람<br/>2분]
+    C --> D[3. Bedrock 검증<br/>1분]
+    D --> E[4. CDK bootstrap<br/>3분]
+    E --> F[5. Telegram bot<br/>3분]
+    F --> G[6. Secrets 배포<br/>2분]
+    G --> H[7. Lambda 이미지<br/>10분]
+    H --> I[8. 전체 배포<br/>15분]
+    I --> J[9. Webhook<br/>1분]
+    J --> J2[10. Anthropic 폼<br/>5분]
+    J2 --> K[✅ 봇과 대화]
 
     style C fill:#FFE4B5
     style I fill:#90EE90
@@ -106,6 +107,18 @@ flowchart LR
 ```
 
 각 단계는 `scripts/0X-*.sh` 1개에 1:1 대응. 순서대로 실행하면 됩니다.
+
+### 총 소요 시간
+
+| 단계 | 시간 | 비고 |
+|---|---|---|
+| Phase 1 (사전 + AWS 세팅) | **~25분** | Node/Docker 설치 빠르면 단축 |
+| Phase 2 (배포) | **~30분** | Docker 빌드가 대부분 |
+| Phase 3 (검증 + 폼 제출) | **~10분** | Anthropic 폼 활성화 5분 대기 |
+| **합계 (Lambda only)** | **~1시간 5분** | 처음 따라하는 경우 |
+| Phase 4 (옵션: Fargate + MCP) | **+40분** | §6 참조 |
+
+**Tip**: 함정에 안 걸리면 더 빠름. 우리 첫 시도엔 함정 14개 만나서 약 6시간 걸림. 이 가이드 따라하면 1시간.
 
 ## 3. 빠른 시작
 
@@ -123,7 +136,7 @@ brew install --cask docker
 npm install -g aws-cdk
 ```
 
-### Step 1: 원본 클론
+### Step 1: 원본 클론 ⏱️ 2분
 
 ```bash
 # 이 레포 옆에 원본도 같이 클론 (스크립트가 ../serverless-openclaw 를 참조)
@@ -133,7 +146,7 @@ git clone https://github.com/serithemage/serverless-openclaw.git
 cd aws-serverless-agent-ko
 ```
 
-### Step 2: AWS 계정 + 자격증명
+### Step 2: AWS 계정 + 자격증명 ⏱️ 10분
 
 ```mermaid
 sequenceDiagram
@@ -156,14 +169,14 @@ sequenceDiagram
 ./scripts/01-aws-configure.sh
 ```
 
-### Step 3: 비용 폭탄 방지 (필수!)
+### Step 3: 비용 폭탄 방지 (필수!) ⏱️ 2분
 
 ```bash
 BUDGET_EMAIL=your@email.com ./scripts/02-budget-alarm.sh
 ```
 $5/월 알람 자동 생성 (50% / 100% 실제 / 100% 예측).
 
-### Step 4: Bedrock 검증
+### Step 4: Bedrock 검증 ⏱️ 1분
 
 ```bash
 ./scripts/03-bedrock-check.sh
@@ -175,7 +188,7 @@ $5/월 알람 자동 생성 (50% / 100% 실제 / 100% 예측).
 - ❌ `anthropic.claude-haiku-4-5-20251001-v1:0`
 - ✅ `global.anthropic.claude-haiku-4-5-20251001-v1:0` (`global.` prefix)
 
-### Step 5: CDK bootstrap
+### Step 5: CDK bootstrap ⏱️ 3분
 
 ```bash
 ./scripts/04-bootstrap-cdk.sh
@@ -183,7 +196,7 @@ $5/월 알람 자동 생성 (50% / 100% 실제 / 100% 예측).
 
 해당 리전에 staging S3 + ECR + IAM roles 생성 (1회).
 
-### Step 6: Telegram bot
+### Step 6: Telegram bot ⏱️ 3분
 
 ```bash
 ./scripts/05-telegram-bot.sh
@@ -191,7 +204,7 @@ $5/월 알람 자동 생성 (50% / 100% 실제 / 100% 예측).
 
 @BotFather 안내 + 토큰 검증 + Keychain 백업.
 
-### Step 7: `.env` 작성
+### Step 7: `.env` 작성 ⏱️ 1분
 
 ```bash
 cd ../serverless-openclaw  # 원본 레포로
@@ -199,7 +212,7 @@ cp ../aws-serverless-agent-ko/.env.example .env
 # 편집기로 .env 열어서 TELEGRAM_BOT_TOKEN 채우기
 ```
 
-### Step 8: 배포 (3단계)
+### Step 8: 배포 (3단계) ⏱️ 25분
 
 ```mermaid
 flowchart TD
@@ -218,13 +231,22 @@ flowchart TD
 
 ```bash
 cd ~/your-workspace/aws-serverless-agent-ko
-./scripts/06-deploy-secrets.sh       # ~2분
-./scripts/07-build-lambda-image.sh   # 10~15분
-./scripts/08-deploy-all.sh           # 10~15분
-./scripts/09-telegram-webhook.sh     # 즉시
+./scripts/06-deploy-secrets.sh       # ⏱️ 2분
+./scripts/07-build-lambda-image.sh   # ⏱️ 10분 (첫 빌드)
+./scripts/08-deploy-all.sh           # ⏱️ 15분 (CloudFormation)
+./scripts/09-telegram-webhook.sh     # ⏱️ 즉시
 ```
 
-### Step 9: 동작 확인
+### Step 9: Anthropic Use case 폼 ⏱️ 5분 (콘솔)
+
+🔴 **이걸 빼먹으면 봇이 "use case not submitted" 응답만 함**.
+
+1. https://ap-northeast-2.console.aws.amazon.com/bedrock/home?region=ap-northeast-2#/model-catalog
+2. **Anthropic → Claude Haiku 4.5** 클릭 → "Request model access"
+3. 폼 작성 (Company name / Industry / Use case) → Submit
+4. 즉시 ~ 15분 내 활성화
+
+### Step 10: 동작 확인 ⏱️ 즉시
 
 Telegram 앱에서 만든 봇과 대화 → 응답 옴 (콜드스타트 시 1~2초).
 
@@ -337,7 +359,7 @@ pie title 월 예상 비용 (개인 사용 ~ $1)
 
 상세: [`docs/cost.md`](./docs/cost.md)
 
-## 6. 옵션: MCP 도구 사용 (Fargate Spot Gateway 추가)
+## 6. 옵션: MCP 도구 사용 (Fargate Spot Gateway 추가) ⏱️ +40분
 
 기본 9단계는 **Lambda 만으로 LLM 채팅 봇** 까지. 봇이 ainote / Linear / GitHub 같은 MCP 도구를 호출하려면 **OpenClaw Gateway** 가 필요한데, Gateway 는 WebSocket 상시 프로세스라 Lambda 로는 못 띄움. 그래서 **Fargate Spot** 을 추가합니다.
 
@@ -360,28 +382,29 @@ Fargate Spot + **5분 무사용 시 자동 종료 (watchdog Lambda)** 조합으�
 | 매일 5~10분 도구 사용 | ~$0.50 |
 | 매일 1시간 활성 사용 | ~$2 |
 
-### 활성화 절차
+### 활성화 절차 (총 ~40분)
 
 ```bash
-# 1. ainote / Linear / GitHub MCP key 를 SSM SecureString 으로 저장
+# 1. MCP key SSM 저장 ⏱️ 1분
 AWS_PROFILE=dcode aws ssm put-parameter \
   --name "/serverless-openclaw/secrets/ainote-mcp-auth" \
   --type SecureString --value "McpKey YOUR_TOKEN" \
   --region ap-northeast-2 --overwrite
 
-# 2. .env 에서 AGENT_RUNTIME 변경
+# 2. .env 에서 AGENT_RUNTIME 변경 ⏱️ 즉시
 # AGENT_RUNTIME=lambda  →  AGENT_RUNTIME=both
 
-# 3. 원본 레포 코드 패치 (patch-config.ts + compute-stack.ts)
-#    이 레포의 docs/mcp-integration.md 참조
+# 3. 원본 레포 코드 패치 ⏱️ 5분
+#    patch-config.ts + compute-stack.ts (docs/mcp-integration.md 참조)
 
-# 4. Fargate container 이미지 빌드 + push
+# 4. Fargate container 이미지 빌드 + push ⏱️ 15분
 docker buildx build --platform linux/arm64 --provenance=false --sbom=false \
   -f packages/container/Dockerfile \
   -t $ECR_HOST/serverless-openclaw:latest --load .
 docker push $ECR_HOST/serverless-openclaw:latest
 
-# 5. cdk deploy --all → NetworkStack + ComputeStack 신규 생성
+# 5. cdk deploy ⏱️ 15분
+#    NetworkStack + ComputeStack 신규 생성 (VPC + Fargate Cluster)
 ./scripts/08-deploy-all.sh
 ```
 
@@ -402,7 +425,7 @@ docker push $ECR_HOST/serverless-openclaw:latest
 
 자세한 통합 코드는 [docs/mcp-integration.md](./docs/mcp-integration.md) (작성 중).
 
-## 7. 정리 (사용 끝났을 때)
+## 7. 정리 (사용 끝났을 때) ⏱️ ~10분
 
 ```bash
 ./scripts/99-teardown.sh
