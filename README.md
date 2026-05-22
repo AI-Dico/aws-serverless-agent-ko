@@ -247,35 +247,77 @@ sequenceDiagram
     API-->>T: 메시지 전송
 ```
 
-## 4. 함정 정리 (당황하지 마세요)
+## 4. 예외 케이스 / 함정 (실배포로 검증한 14가지)
+
+### 4.1 에러 메시지 → 어디로 가야 하나
+
+| 본 에러 | 원인 | 해결 |
+|---|---|---|
+| 콘솔에서 "KMS 키 만드시오" 안내 | IAM ≠ KMS 헷갈림 | IAM → Users → Security credentials → Access keys ([T1](docs/troubleshooting.md#t1-kms--iam-access-key)) |
+| `Model access page is deprecated` | 2025+ 부터 자동 활성화 | 그냥 모델 호출 → 자동 활성화 ([T2](docs/troubleshooting.md#t2-bedrock-model-access-페이지가-deprecated)) |
+| `on-demand throughput isn't supported` | 신규 모델은 inference profile 필수 | 모델 ID 에 `global.` prefix ([T3](docs/troubleshooting.md#t3-on-demand-throughput-isnt-supported)) |
+| `Parameters missing a value: BridgeAuthToken, ...` | SecretsStack 파라미터 미주입 | `./scripts/06-deploy-secrets.sh` 먼저 ([T4](docs/troubleshooting.md#t4-cdk-deploy-parameters-missing-a-value)) |
+| `Source image ... does not exist` | ECR repo 외부 생성 필요 | `./scripts/07-build-lambda-image.sh` ([T5](docs/troubleshooting.md#t5-lambda-source-image-does-not-exist)) |
+| `AccessDeniedException` (모델 호출) | Anthropic 약관 폼 미제출 | 콘솔 use case form 제출 ([T6](docs/troubleshooting.md#t6-bedrock-모델은-있는데-호출-실패-anthropic-약관)) / ([T14](docs/troubleshooting.md#t14-bedrock-model-use-case-details-have-not-been-submitted-🔴-가장-마지막-함정)) |
+| `Cannot connect to Docker daemon` | Docker Desktop 미실행 | Docker Desktop 시작 또는 `colima start` ([T7](docs/troubleshooting.md#t7-docker-데몬-미실행)) |
+| 청구서에 NAT Gateway/EC2 비용 | 실수로 만든 자원 | `./scripts/99-teardown.sh` ([T8](docs/troubleshooting.md#t8-비용이-늘고-있는데)) |
+| 봇 무응답 | Webhook 미등록 | `./scripts/09-telegram-webhook.sh` ([T9](docs/troubleshooting.md#t9-telegram-봇이-응답-안-함)) |
+| `image manifest ... is not supported` | Docker Desktop 28+ OCI manifest | `regctl image mod --to-docker` ([T11](docs/troubleshooting.md#t11-lambda-image-manifest--is-not-supported-🔴-큰-함정)) |
+| `Cannot find module '@smithy/smithy-client'` | Dockerfile 의존성 누락 | Dockerfile 패치 ([T12](docs/troubleshooting.md#t12-lambda-container-cannot-find-module-smithysmithy-client)) |
+| `Package subpath './retry' not exported` | OpenClaw + lib-dynamodb @smithy 버전 충돌 | 둘을 같이 `npm install` ([T13](docs/troubleshooting.md#t13-lambda-container-smithycoreretry-not-exported)) |
+| `Model use case details have not been submitted` | 🔴 **가장 흔히 만나는 마지막 함정** | 콘솔 use case form 5분 ([T14](docs/troubleshooting.md#t14-bedrock-model-use-case-details-have-not-been-submitted-🔴-가장-마지막-함정)) |
+
+### 4.2 단계별 진단 흐름
 
 ```mermaid
 flowchart TD
-    Start[시작] --> Q1{KMS 키<br/>만들라고 했나?}
-    Q1 -->|네| F1[❌ KMS 아님!<br/>IAM Access Key 입니다]
-    Q1 -->|아니| Q2{Bedrock 모델<br/>access 페이지가<br/>비활성?}
+    Start[배포 진행 중<br/>에러 발생] --> Q1{어느 단계?}
 
-    Q2 -->|네| F2[2025년 후반부터 자동 활성화<br/>그냥 모델 호출하면 됨]
-    Q2 -->|아니| Q3{CDK deploy 가<br/>parameters 없다고<br/>실패?}
+    Q1 -->|콘솔 IAM 설정| F1[T1: KMS 아님, Access Key]
+    Q1 -->|cdk bootstrap| F2[T2/T3: 콘솔 region<br/>+ inference profile prefix]
+    Q1 -->|cdk deploy| Q2{어떤 에러?}
+    Q1 -->|Lambda 실행| Q3{어떤 import?}
+    Q1 -->|Telegram 봇| Q4{응답 내용?}
 
-    Q3 -->|네| F3[scripts/06-deploy-secrets.sh<br/>먼저 실행]
-    Q3 -->|아니| Q4{Lambda 가<br/>이미지 없다고<br/>실패?}
+    Q2 -->|Parameters missing| F4[T4: scripts/06 먼저]
+    Q2 -->|Source image| F5[T5: scripts/07 먼저]
+    Q2 -->|manifest not supported| F11[T11: regctl 변환]
 
-    Q4 -->|네| F4[scripts/07-build-lambda-image.sh<br/>실행 - ECR repo 외부 생성 필요]
-    Q4 -->|아니| Q5{Bedrock 모델 호출 시<br/>"on-demand not supported"?}
+    Q3 -->|@smithy/smithy-client| F12[T12: Dockerfile 의존성]
+    Q3 -->|@smithy/core/retry| F13[T13: lib-dynamodb 같이 install]
 
-    Q5 -->|네| F5[모델 ID 에 global./apac./us.<br/>prefix 붙이기]
-    Q5 -->|아니| OK[정상]
+    Q4 -->|무응답| F9[T9: webhook 등록]
+    Q4 -->|use case not submitted| F14[T14: Anthropic 폼]
+    Q4 -->|정상 응답| OK[✅ 끝]
 
     style F1 fill:#FFB6C1
-    style F2 fill:#FFE4B5
-    style F3 fill:#FFE4B5
-    style F4 fill:#FFE4B5
-    style F5 fill:#FFE4B5
+    style F11 fill:#FFB6C1
+    style F14 fill:#FFB6C1
     style OK fill:#90EE90
 ```
 
-자세한 설명: [`docs/troubleshooting.md`](./docs/troubleshooting.md)
+### 4.3 사용자가 직접 해야 하는 2가지 (스크립트 자동화 불가)
+
+스크립트로 자동화한 12개와 별개로 **콘솔에서 직접** 해야 하는 작업 2가지:
+
+1. **[T1] IAM Access Key 발급** — `aws configure` 입력값. AWS 콘솔에서 IAM 사용자 + Access Key (CSV 다운로드 1회만 가능)
+2. **[T14] Anthropic Use case form** — Bedrock 콘솔에서 한 번만. 5분, 즉시 활성화
+
+스크립트가 `./scripts/01-aws-configure.sh` / `./scripts/03-bedrock-check.sh` 실행 시점에 자동 안내합니다.
+
+### 4.4 절대 만들면 안 되는 자원 (비용 폭탄)
+
+| 자원 | 시간당 비용 | 한 달 |
+|---|---|---|
+| NAT Gateway | $0.045 | **$32** |
+| Application Load Balancer | $0.022 + LCU | **$16+** |
+| EC2 t3.small | $0.021 | **$15** |
+| RDS db.t3.micro | $0.018 | **$13** |
+| Interface VPC Endpoint | $0.01 | **$7** |
+
+이 프로젝트는 **위 자원을 절대 만들지 않습니다** (CDK 가 `natGateways: 0` 강제). `cdk diff` 로 확인 후 배포하세요.
+
+자세한 설명: [`docs/troubleshooting.md`](./docs/troubleshooting.md) (T1~T14 전체)
 
 ## 5. 비용 구조
 
