@@ -54,11 +54,18 @@ BUDGET_EMAIL=you@example.com \
 
 ## 핵심 함정 (반드시 사용자에게 안내)
 
-1. **AWS 콘솔에서 "키 생성" 검색 → KMS 가 떠도 그건 IAM 아님** → IAM → Users → Security credentials 에서 Access Key 발급
-2. **Bedrock model access 페이지는 deprecated** → 그냥 호출하면 자동 활성화 (Anthropic 모델은 use case 폼)
-3. **모델 ID 에 `global.` prefix 필수** (신규 모델은 inference profile 만 지원)
-4. **SecretsStack 은 parameter 주입 필수** → `cdk deploy --all` 만 하면 항상 실패. `06-deploy-secrets.sh` 먼저
-5. **Lambda agent ECR repo 외부 생성 필요** → `07-build-lambda-image.sh` 가 처리
+전체 14가지 — `docs/troubleshooting.md` T1~T14.
+
+### 사용자가 직접 해야 (스크립트로 자동화 불가)
+1. **T1 — KMS ≠ IAM**: 콘솔에서 IAM Access Key 발급 (KMS 키 만들지 말 것)
+2. **T14 — Anthropic use case 폼**: Bedrock 콘솔에서 1회 폼 제출 (5분, 즉시 활성화)
+
+### 스크립트가 자동 처리
+3. **T3 — `global.` prefix**: `.env.example` 의 AI_MODEL 에 이미 적용
+4. **T4 — SecretsStack params**: `06-deploy-secrets.sh` 가 4개 토큰 자동 생성+주입
+5. **T5 — ECR repo 외부 생성**: `07-build-lambda-image.sh` 가 만들고 빌드+푸시
+6. **T11 — Docker Desktop 28 OCI manifest**: docker push 직접 사용 + regctl fallback
+7. **T12/T13 — @smithy deps 충돌**: Dockerfile 패치 (lib-dynamodb 와 openclaw 같이 npm install)
 
 ## 모델 선택 가이드
 

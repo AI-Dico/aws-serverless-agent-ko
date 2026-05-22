@@ -209,6 +209,40 @@ graph LR
 - Bridge Bearer token (모든 endpoint 인증)
 - Cognito JWT (`aws-jwt-verify` 로 ws-connect 에서 검증)
 
+## 검증된 실측 (2026-05-22)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as 사용자
+    participant TG as Telegram
+    participant API as API Gateway HTTP<br/>(cfkwrf0803...)
+    participant TGWH as telegram-webhook<br/>Lambda (256MB)
+    participant LA as serverless-openclaw-agent<br/>Lambda Container (2GB arm64)
+    participant SSM as SSM Parameter
+    participant BR as Bedrock Haiku 4.5<br/>(global. inference)
+
+    U->>TG: "안녕"
+    TG->>API: POST /telegram (webhook)
+    API->>TGWH: invoke
+    Note over TGWH: ~835ms<br/>(Init 643ms + 처리 ~190ms)
+    TGWH->>SSM: getParameters
+    SSM-->>TGWH: bot token + secret
+    TGWH->>LA: invoke async
+    Note over LA: 첫 호출 콜드스타트 ~600ms<br/>이후 웜 ~10ms
+    LA->>BR: invokeModel
+    BR-->>LA: "Hello!" (~500ms)
+    LA->>TG: sendMessage
+    TG-->>U: 봇 응답 표시
+```
+
+**실측 콜드스타트**:
+- Lambda Container 첫 init: **643ms** (이미지 풀 포함)
+- 두 번째 invoke: **107ms** (warm)
+- 세 번째 이후: **10~390ms**
+
+**전체 응답 시간** (사용자 메시지 → Telegram 응답): **~1.5초** (콜드) / **~600ms** (웜)
+
 ## 추가 자료
 
 - 원본 발표: [serithemage/serverless-openclaw](https://github.com/serithemage/serverless-openclaw)

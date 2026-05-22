@@ -1,6 +1,29 @@
 # 함정 및 해결 (Troubleshooting)
 
-배포하면서 만난 함정과 해결법을 시간 순으로 정리.
+배포하면서 만난 14가지 함정. **실배포 (2026-05-21 ~ 22) 검증 완료**.
+
+## 한 눈에 보기
+
+| # | 함정 | 어디서? | 우리 스크립트로 자동 처리? |
+|---|---|---|---|
+| [T1](#t1-kms--iam-access-key) | KMS 와 IAM 헷갈림 | 콘솔 IAM 사용자 생성 | ❌ 사용자 안내 |
+| [T2](#t2-bedrock-model-access-페이지가-deprecated) | Bedrock model access 페이지 deprecated | Bedrock 콘솔 | ✅ `03-bedrock-check.sh` 자동 호출 |
+| [T3](#t3-on-demand-throughput-isnt-supported) | 신규 모델은 `global.` prefix 필요 | `.env` AI_MODEL | ✅ `.env.example` 에 정답 |
+| [T4](#t4-cdk-deploy-parameters-missing-a-value) | SecretsStack 은 parameter 별도 주입 | CDK 배포 | ✅ `06-deploy-secrets.sh` |
+| [T5](#t5-lambda-source-image-does-not-exist) | ECR repo 외부 생성 필요 | CDK 배포 | ✅ `07-build-lambda-image.sh` |
+| [T6](#t6-bedrock-모델은-있는데-호출-실패-anthropic-약관) | Anthropic 약관 동의 필요 | 첫 호출 | (T14 와 같음) |
+| [T7](#t7-docker-데몬-미실행) | Docker daemon 미실행 | 빌드 | ✅ `00-prereqs.sh` 점검 |
+| [T8](#t8-비용이-늘고-있는데) | 비용 폭탄 위험 | 운영 | ✅ `02-budget-alarm.sh` |
+| [T9](#t9-telegram-봇이-응답-안-함) | Telegram webhook 미등록 | 배포 후 | ✅ `09-telegram-webhook.sh` |
+| [T10](#t10-이미지가-너무-큰데) | 이미지 크기 | Docker 빌드 | ✅ 멀티스테이지 적용됨 |
+| [T11](#t11-lambda-image-manifest--is-not-supported-🔴-큰-함정) | 🔴 **Docker Desktop 28 OCI manifest** | ECR push | ✅ `07-build-lambda-image.sh` + regctl 자동 |
+| [T12](#t12-lambda-container-cannot-find-module-smithysmithy-client) | `@smithy/*` 누락 | Lambda 실행 | ✅ Dockerfile 수정 |
+| [T13](#t13-lambda-container-smithycoreretry-not-exported) | `@smithy/core` 버전 충돌 | Lambda 실행 | ✅ Dockerfile 수정 |
+| [T14](#t14-bedrock-model-use-case-details-have-not-been-submitted-🔴-가장-마지막-함정) | 🔴 **Anthropic use case 폼** | 첫 모델 호출 | ❌ 사용자 콘솔 (5분) |
+
+**사용자가 직접 해야 하는 것은 T1 + T14 두 가지뿐.** 나머지는 스크립트가 처리.
+
+---
 
 ## T1. KMS ≠ IAM Access Key
 

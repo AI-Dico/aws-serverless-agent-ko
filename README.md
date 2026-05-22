@@ -2,11 +2,25 @@
 
 > 맥미니 없이 **사용한 만큼만 과금되는** AI Cloud Agent를 AWS 서버리스로 띄우는 풀 튜토리얼.
 > 원본: [serithemage/serverless-openclaw](https://github.com/serithemage/serverless-openclaw) (AWSKRUG 이상현님 발표)
-> 이 레포: 한국어 안내 + 함정 회피 + 자동화 스크립트.
+> 이 레포: 한국어 안내 + **실배포로 검증된** 함정 회피 + 자동화 스크립트.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![AWS](https://img.shields.io/badge/AWS-Serverless-orange)](https://aws.amazon.com/serverless/)
 [![CDK](https://img.shields.io/badge/CDK-v2-blue)](https://aws.amazon.com/cdk/)
+[![Verified](https://img.shields.io/badge/Verified-2026--05--22-green)](#-검증-완료)
+
+## ✅ 검증 완료
+
+**2026-05-21 ~ 22 실제 AWS 계정에서 처음부터 끝까지 따라하며 검증.** Telegram 봇이 실제 Claude Haiku 4.5 응답을 받아왔습니다.
+
+| 항목 | 결과 |
+|---|---|
+| 6 CloudFormation stacks | 전부 CREATE_COMPLETE |
+| Lambda Container | arm64, 2GB, 콜드 ~600ms, 웜 ~10ms |
+| Bedrock 호출 | Claude Haiku 4.5 (`global.` inference profile) |
+| Telegram webhook | 메시지 → API GW → Lambda → Bedrock → 응답 |
+| 발견한 함정 | **14가지** (docs/troubleshooting.md) |
+| 최종 비용 | 검증 전체 진행 + 며칠 운영 ~$0.30 |
 
 ## 0. 이게 뭐예요?
 
